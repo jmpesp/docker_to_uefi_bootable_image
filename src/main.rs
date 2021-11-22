@@ -316,6 +316,7 @@ fn main() -> Result<()> {
             run(
                 "tar".into(),
                 &[
+                    "--sparse".into(),
                     "-C".into(),
                     mount_partition_3.dest(),
                     "-xf".into(),
