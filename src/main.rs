@@ -78,18 +78,52 @@ fn main() -> Result<()> {
             let working_dir = tempdir()?;
 
             // Create blank file
-            let mut img_path = working_dir.path().to_path_buf();
-            img_path.push("output.img");
-            println!(
-                "> Creating {} GB file at {:?}",
-                disk_size,
-                img_path.as_path()
-            );
+            let img_path = {
+                let mut img_path = working_dir.path().to_path_buf();
+                img_path.push("output.img");
+                img_path.into_os_string().into_string().unwrap()
+            };
+            println!("> Creating {} GB file at {:?}", disk_size, img_path,);
 
-            let mut img = File::create(&img_path)?;
-            img.set_len((disk_size * 1024 * 1024 * 1024).try_into().unwrap());
+            let img = File::create(&img_path)?;
+            img.set_len((disk_size * 1024 * 1024 * 1024).try_into().unwrap())?;
+            drop(img);
 
-            // TODO: create partitions
+            println!("> Create partitions");
+            run(
+                "sgdisk".into(),
+                &[
+                    "-n".into(),
+                    "1:2048:4095".into(),
+                    "-c".into(),
+                    "1:\"BIOS Boot Partition\"".into(),
+                    "-t".into(),
+                    "1:ef02".into(),
+                    img_path.clone(),
+                ],
+            )?;
+
+            run(
+                "sgdisk".into(),
+                &[
+                    "-n".into(),
+                    "2:4096:413695".into(),
+                    "-c".into(),
+                    "2:\"EFI System Partition\"".into(),
+                    "-t".into(),
+                    "1:ef00".into(),
+                    img_path.clone(),
+                ],
+            )?;
+
+            run(
+                "sgdisk".into(),
+                &[
+                    "-n".into(),
+                    "3:413696:".into(),
+                    img_path.clone(),
+                ],
+            )?;
 
             // TODO: format partitions
 
@@ -105,8 +139,7 @@ fn main() -> Result<()> {
 
             // TODO: clean up
 
-            println!("> Move {:?} to {:?}", img_path.as_path(), output_file);
-            drop(img);
+            println!("> Move {:?} to {:?}", img_path, output_file);
             std::fs::rename(img_path, output_file)?;
         }
     }
