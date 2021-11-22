@@ -17,3 +17,5 @@ Test with QEMU:
         -bios /usr/share/OVMF/OVMF_CODE.fd \
         -drive file=debian.img,if=virtio,format=raw
 
+Note this will only work on Linux!
+
