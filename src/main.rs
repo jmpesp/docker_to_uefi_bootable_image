@@ -89,7 +89,21 @@ fn main() -> Result<()> {
             let mut img = File::create(&img_path)?;
             img.set_len((disk_size * 1024 * 1024 * 1024).try_into().unwrap());
 
-            // TODO: create
+            // TODO: create partitions
+
+            // TODO: format partitions
+
+            // TODO: loopback mount partitions
+
+            // TODO: save container to mount
+
+            // TODO: install extra packages in container to support UEFI boot
+
+            // TODO: install bootloader
+
+            // TODO: fix startup.nsh for debian
+
+            // TODO: clean up
 
             println!("> Move {:?} to {:?}", img_path.as_path(), output_file);
             drop(img);
