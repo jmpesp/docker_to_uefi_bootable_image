@@ -5,10 +5,12 @@
 //
 
 use std::fs::File;
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
-use anyhow::Result;
+use anyhow::{bail, Result};
+use rand::{distributions::Alphanumeric, Rng};
 use structopt::StructOpt;
 use tempfile::tempdir;
 
@@ -19,9 +21,6 @@ enum Args {
         #[structopt(short, long)]
         image_name: String,
 
-        #[structopt(short, long)]
-        flavor: String,
-
         #[structopt(short, long, parse(from_os_str))]
         output_file: PathBuf,
 
@@ -31,7 +30,21 @@ enum Args {
     },
 }
 
-fn run(exe: String, args: &[String]) -> Result<Output, std::io::Error> {
+fn output_stdout_string(output: &Output) -> String {
+    let mut text = output
+        .stdout
+        .iter()
+        .map(|x| (*x as char).to_string())
+        .collect::<String>();
+
+    if text.ends_with('\n') {
+        text.pop();
+    }
+
+    text
+}
+
+fn run(exe: String, args: &[String]) -> Result<Output> {
     let mut cmd = Command::new(exe);
 
     for arg in args {
@@ -44,13 +57,12 @@ fn run(exe: String, args: &[String]) -> Result<Output, std::io::Error> {
     let result = cmd.output()?;
 
     // Debug: print output
-    let text = result
-        .stdout
-        .iter()
-        .map(|x| (*x as char).to_string())
-        .collect::<String>();
 
-    println!("# {}", text);
+    println!("# {}", output_stdout_string(&result));
+
+    if !result.status.success() {
+        bail!("Command failed!");
+    }
 
     Ok(result)
 }
@@ -74,6 +86,25 @@ fn test_run() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn grep() -> Result<()> {
+    let result = run(
+        "blkid".into(),
+        &["-o".into(), "export".into(), "/dev/nvme0n1p1".into()],
+    )?;
+
+    let text = output_stdout_string(&result);
+
+    let text: Vec<&str> = text
+        .split("\n")
+        .filter(|x| x.starts_with("UUID="))
+        .collect();
+
+    assert_eq!(text, vec!["UUID=D466-DF85"]);
+
+    Ok(())
+}
+
 struct LoopbackDevice {
     path: String,
 }
@@ -85,10 +116,7 @@ impl LoopbackDevice {
             &["--show".into(), "--find".into(), source_path],
         )?;
 
-        let mut path: String = output.stdout.iter().map(|x| *x as char).collect();
-        if path.ends_with('\n') {
-            path.pop();
-        }
+        let path: String = output_stdout_string(&output);
 
         Ok(Self { path })
     }
@@ -109,7 +137,6 @@ impl Drop for LoopbackDevice {
 }
 
 struct Mount {
-    source: String,
     dest: String,
 }
 
@@ -118,9 +145,18 @@ impl Mount {
         run("mkdir".into(), &["-p".into(), dest.clone()])?;
 
         println!(">> mount {} {}", source, dest);
-        run("mount".into(), &[source.clone(), dest.clone()])?;
+        run("mount".into(), &[source, dest.clone()])?;
 
-        Ok(Self { source, dest })
+        Ok(Self { dest })
+    }
+
+    fn bind(source: String, dest: String) -> Result<Self> {
+        run("mkdir".into(), &["-p".into(), dest.clone()])?;
+
+        println!(">> mount --bind {} {}", source, dest);
+        run("mount".into(), &["--bind".into(), source, dest.clone()])?;
+
+        Ok(Self { dest })
     }
 
     fn dest(&self) -> String {
@@ -141,7 +177,6 @@ fn main() -> Result<()> {
     match args {
         Args::Create {
             image_name,
-            flavor: _,
             output_file,
             disk_size,
         } => {
@@ -186,7 +221,7 @@ fn main() -> Result<()> {
                     "-c".into(),
                     "2:\"EFI System Partition\"".into(),
                     "-t".into(),
-                    "1:ef00".into(),
+                    "2:ef00".into(),
                     img_path.clone(),
                 ],
             )?;
@@ -227,7 +262,15 @@ fn main() -> Result<()> {
 
             let mount_partition_2 = Mount::new(
                 root_device_partition_2.clone(),
-                format!("{}/efi/EFI/BOOT/", mount_root_path),
+                format!("{}/boot/efi", mount_root_path),
+            )?;
+
+            run(
+                "mkdir".into(),
+                &[
+                    "-p".into(),
+                    format!("{}/boot/efi/EFI/BOOT/", mount_root_path),
+                ],
             )?;
 
             println!("> Copy docker image contents to directory");
@@ -271,17 +314,167 @@ fn main() -> Result<()> {
                 ],
             )?;
 
-            // Debug: output what's in mount partitions
-            run("ls".into(), &["-al".into(), mount_partition_3.dest()])?;
-            run("ls".into(), &["-al".into(), mount_partition_2.dest()])?;
+            println!("> install extra packages in container to support UEFI boot");
 
-            // TODO: install extra packages in container to support UEFI boot
+            std::fs::copy(
+                "/etc/resolv.conf",
+                format!("{}/etc/resolv.conf", mount_partition_3.dest()),
+            )?;
 
-            // TODO: install bootloader
+            run(
+                "chroot".into(),
+                &[
+                    mount_partition_3.dest(),
+                    "apt".into(),
+                    "update".into(),
+                    "-y".into(),
+                ],
+            )?;
+            run(
+                "chroot".into(),
+                &[
+                    mount_partition_3.dest(),
+                    "apt".into(),
+                    "install".into(),
+                    "-y".into(),
+                    "linux-image-amd64".into(),
+                    "systemd-sysv".into(),
+                    "grub2-common".into(),
+                    "grub-efi-amd64-bin".into(),
+                    "initramfs-tools".into(),
+                ],
+            )?;
 
-            // TODO: fix startup.nsh for debian
+            println!("> write fstab");
+
+            let mut fstab = File::create(format!("{}/etc/fstab", mount_partition_3.dest()))?;
+
+            let p3_fs_uuid: String = output_stdout_string(&run(
+                "blkid".into(),
+                &["-o".into(), "export".into(), root_device_partition_3],
+            )?)
+            .split('\n')
+            .filter(|x| x.starts_with("UUID="))
+            .collect();
+
+            writeln!(fstab, "{} / ext4 errors=remount-ro 0 1", p3_fs_uuid)?;
+
+            let p2_fs_uuid: String = output_stdout_string(&run(
+                "blkid".into(),
+                &["-o".into(), "export".into(), root_device_partition_2],
+            )?)
+            .split('\n')
+            .filter(|x| x.starts_with("UUID="))
+            .collect();
+
+            writeln!(fstab, "{} /boot/efi vfat defaults 0 2", p2_fs_uuid)?;
+
+            drop(fstab);
+
+            run(
+                "cat".into(),
+                &[format!("{}/etc/fstab", mount_partition_3.dest())],
+            )?;
+
+            println!("> install grub");
+
+            run(
+                "mkdir".into(),
+                &[
+                    "-p".into(),
+                    format!("{}/boot/grub/", mount_partition_3.dest()),
+                ],
+            )?;
+
+            let mut device_map =
+                File::create(format!("{}/boot/grub/device.map", mount_partition_3.dest()))?;
+            writeln!(device_map, "(hd0) {}", root_device.path())?;
+            drop(device_map);
+
+            run(
+                "mkdir".into(),
+                &[
+                    "-p".into(),
+                    format!("{}/etc/default/", mount_partition_3.dest()),
+                ],
+            )?;
+
+            let mut grub_file =
+                File::create(format!("{}/etc/default/grub", mount_partition_3.dest()))?;
+            writeln!(grub_file, "GRUB_DEVICE={}", p3_fs_uuid)?;
+            drop(grub_file);
+
+            let bind_dev = Mount::bind("/dev".into(), format!("{}/dev", mount_partition_3.dest()))?;
+            let bind_proc =
+                Mount::bind("/proc".into(), format!("{}/proc", mount_partition_3.dest()))?;
+            let bind_sys = Mount::bind("/sys".into(), format!("{}/sys", mount_partition_3.dest()))?;
+
+            run(
+                "grub-install".into(),
+                &[
+                    "--target=x86_64-efi".into(),
+                    format!("--efi-directory={}/boot/efi/", mount_partition_3.dest()),
+                    format!("--root-directory={}", mount_partition_3.dest()),
+                    "--no-floppy".into(),
+                    root_device.path(),
+                ],
+            )?;
+            run(
+                "chroot".into(),
+                &[
+                    mount_partition_3.dest(),
+                    "grub-mkconfig".into(),
+                    "-o".into(),
+                    "/boot/grub/grub.cfg".into(),
+                ],
+            )?;
+
+            println!("> no loop necessary in final image");
+            run(
+                "chroot".into(),
+                &[
+                    mount_partition_3.dest(),
+                    "rm".into(),
+                    "/boot/grub/device.map".into(),
+                ],
+            )?;
+
+            println!("> update-initramfs");
+            run(
+                "chroot".into(),
+                &[
+                    mount_partition_3.dest(),
+                    "update-initramfs".into(),
+                    "-u".into(),
+                ],
+            )?;
+
+            let root_passwd: String = rand::thread_rng()
+                .sample_iter(&Alphanumeric)
+                .take(16)
+                .map(char::from)
+                .collect();
+
+            println!("> set root password as {}", root_passwd);
+
+            let mut passwd = Command::new("chroot")
+                .stdin(std::process::Stdio::piped())
+                .arg(mount_partition_3.dest())
+                .arg("passwd")
+                .spawn()?;
+
+            {
+                let passwd_stdin = passwd.stdin.as_mut().unwrap();
+                writeln!(passwd_stdin, "{}", root_passwd)?;
+                writeln!(passwd_stdin, "{}", root_passwd)?;
+            }
+
+            passwd.wait_with_output()?;
 
             println!("> Clean up");
+            drop(bind_dev);
+            drop(bind_proc);
+            drop(bind_sys);
             drop(mount_partition_2);
             drop(mount_partition_3);
 
