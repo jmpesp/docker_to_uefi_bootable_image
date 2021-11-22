@@ -7,4 +7,5 @@ edition = "2021"
 anyhow = "1"
 tempfile = "3"
 structopt = "0.3"
+uuid = { version = "0.8", features = [ "serde", "v4" ] }
 

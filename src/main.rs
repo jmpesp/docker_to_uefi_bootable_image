@@ -38,7 +38,21 @@ fn run(exe: String, args: &[String]) -> Result<Output, std::io::Error> {
         cmd.arg(arg);
     }
 
-    cmd.output()
+    // Debug: print what is about to run
+    println!("# {:?}", cmd);
+
+    let result = cmd.output()?;
+
+    // Debug: print output
+    let text = result
+        .stdout
+        .iter()
+        .map(|x| (*x as char).to_string())
+        .collect::<String>();
+
+    println!("# {}", text);
+
+    Ok(result)
 }
 
 #[test]
@@ -91,6 +105,33 @@ impl Drop for LoopbackDevice {
         // XXX if your OS auto-mounted this, need a umount
 
         run("losetup".into(), &["-d".into(), self.path.clone()]).expect("could not drop!");
+    }
+}
+
+struct Mount {
+    source: String,
+    dest: String,
+}
+
+impl Mount {
+    fn new(source: String, dest: String) -> Result<Self> {
+        run("mkdir".into(), &["-p".into(), dest.clone()])?;
+
+        println!(">> mount {} {}", source, dest);
+        run("mount".into(), &[source.clone(), dest.clone()])?;
+
+        Ok(Self { source, dest })
+    }
+
+    fn dest(&self) -> String {
+        self.dest.clone()
+    }
+}
+
+impl Drop for Mount {
+    fn drop(&mut self) {
+        println!("# Umount {}", self.dest);
+        run("umount".into(), &[self.dest.clone()]).expect("could not umount!");
     }
 }
 
@@ -168,12 +209,71 @@ fn main() -> Result<()> {
             println!("> Format partitions");
             run(
                 "mkfs.vfat".into(),
-                &["-F".into(), "32".into(), root_device_partition_2],
+                &["-F".into(), "32".into(), root_device_partition_2.clone()],
             )?;
 
-            run("mkfs.ext4".into(), &[root_device_partition_3])?;
+            run("mkfs.ext4".into(), &[root_device_partition_3.clone()])?;
 
-            // TODO: save container to mount
+            println!("> Mount partitions");
+
+            let mount_root_path = {
+                let mut path = working_dir.path().to_path_buf();
+                path.push("mnt");
+                path.into_os_string().into_string().unwrap()
+            };
+
+            let mount_partition_3 =
+                Mount::new(root_device_partition_3.clone(), mount_root_path.clone())?;
+
+            let mount_partition_2 = Mount::new(
+                root_device_partition_2.clone(),
+                format!("{}/efi/EFI/BOOT/", mount_root_path),
+            )?;
+
+            println!("> Copy docker image contents to directory");
+
+            let tempname: String = uuid::Uuid::new_v4().to_string();
+
+            let export_path = {
+                let mut path = working_dir.path().to_path_buf();
+                path.push("export.tar");
+                path.into_os_string().into_string().unwrap()
+            };
+
+            run(
+                "docker".into(),
+                &[
+                    "run".into(),
+                    "-d".into(),
+                    "--name".into(),
+                    tempname.clone(),
+                    image_name,
+                ],
+            )?;
+            run(
+                "docker".into(),
+                &[
+                    "export".into(),
+                    "-o".into(),
+                    export_path.clone(),
+                    tempname.clone(),
+                ],
+            )?;
+            run("docker".into(), &["rm".into(), tempname])?;
+
+            run(
+                "tar".into(),
+                &[
+                    "-C".into(),
+                    mount_partition_3.dest(),
+                    "-xf".into(),
+                    export_path,
+                ],
+            )?;
+
+            // Debug: output what's in mount partitions
+            run("ls".into(), &["-al".into(), mount_partition_3.dest()])?;
+            run("ls".into(), &["-al".into(), mount_partition_2.dest()])?;
 
             // TODO: install extra packages in container to support UEFI boot
 
@@ -181,7 +281,9 @@ fn main() -> Result<()> {
 
             // TODO: fix startup.nsh for debian
 
-            // TODO: clean up
+            println!("> Clean up");
+            drop(mount_partition_2);
+            drop(mount_partition_3);
 
             println!("> Move {:?} to {:?}", img_path, output_file);
             std::fs::rename(img_path, output_file)?;
