@@ -11,7 +11,8 @@ fn run(exe: String, args: &[String]) -> Result<Output> {
     cmd.output()
 }
 
-fn main() -> Result<()> {
+#[test]
+fn test_run() -> Result<()> {
     let result = run("ls".into(), &["-al".into()])?;
 
     println!("{:?}", result.status);
@@ -26,5 +27,9 @@ fn main() -> Result<()> {
         .join("");
     println!("{}", text);
 
+    Ok(())
+}
+
+fn main() -> Result<()> {
     Ok(())
 }
