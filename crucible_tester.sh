@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 make
 
@@ -17,7 +18,9 @@ sudo \
         --disk-size ${GBS} \
         --root-passwd crucible \
 
-pigz -c crucible-tester.img > crucible-tester.img.gz
+virt-sparsify crucible-tester.img crucible-tester-sparse.img
 
-ls -alh crucible-tester.img.gz
+pigz crucible-tester-sparse.img
+
+ls -alh crucible-tester-sparse.img.gz
 
