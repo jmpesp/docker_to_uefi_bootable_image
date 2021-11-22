@@ -10,3 +10,4 @@ sudo \
         --output-file debian.img \
         --disk-size 2 \
         --root-passwd nNGQlzZxBYxBmPIgpEP5ezgbqPb4L2R4
+

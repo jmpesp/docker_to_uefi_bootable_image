@@ -31,6 +31,9 @@ enum Args {
         // Optional root password
         #[structopt(short, long)]
         root_passwd: Option<String>,
+
+        #[structopt(short, long, use_delimiter = true)]
+        extra_packages: Vec<String>,
     },
 }
 
@@ -184,6 +187,7 @@ fn main() -> Result<()> {
             output_file,
             disk_size,
             root_passwd,
+            extra_packages,
         } => {
             println!(
                 "Creating a bootable image {:?} out of {:?}",
@@ -349,6 +353,20 @@ fn main() -> Result<()> {
                     "initramfs-tools".into(),
                 ],
             )?;
+
+            if !extra_packages.is_empty() {
+                println!("> install extra packages");
+
+                let mut args = vec![
+                    mount_partition_3.dest(),
+                    "apt".into(),
+                    "install".into(),
+                    "-y".into(),
+                ];
+                args.extend_from_slice(&extra_packages[..]);
+
+                run("chroot".into(), &args)?;
+            }
 
             println!("> write fstab");
 
