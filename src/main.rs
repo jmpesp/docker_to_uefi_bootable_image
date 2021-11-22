@@ -60,6 +60,40 @@ fn test_run() -> Result<()> {
     Ok(())
 }
 
+struct LoopbackDevice {
+    path: String,
+}
+
+impl LoopbackDevice {
+    fn new(source_path: String) -> Result<Self> {
+        let output = run(
+            "losetup".into(),
+            &["--show".into(), "--find".into(), source_path],
+        )?;
+
+        let mut path: String = output.stdout.iter().map(|x| *x as char).collect();
+        if path.ends_with('\n') {
+            path.pop();
+        }
+
+        Ok(Self { path })
+    }
+
+    fn path(&self) -> String {
+        self.path.clone()
+    }
+}
+
+impl Drop for LoopbackDevice {
+    fn drop(&mut self) {
+        println!("# Dropping {}", self.path);
+
+        // XXX if your OS auto-mounted this, need a umount
+
+        run("losetup".into(), &["-d".into(), self.path.clone()]).expect("could not drop!");
+    }
+}
+
 fn main() -> Result<()> {
     let args = Args::from_args_safe()?;
 
@@ -118,16 +152,26 @@ fn main() -> Result<()> {
 
             run(
                 "sgdisk".into(),
-                &[
-                    "-n".into(),
-                    "3:413696:".into(),
-                    img_path.clone(),
-                ],
+                &["-n".into(), "3:413696:".into(), img_path.clone()],
             )?;
 
-            // TODO: format partitions
+            println!("> Loopback main disk");
+            let root_device = LoopbackDevice::new(img_path.clone())?;
 
-            // TODO: loopback mount partitions
+            println!("> Main disk at {}", root_device.path());
+
+            let root_device_partition_2 = format!("{}{}", root_device.path(), "p2");
+            let root_device_partition_3 = format!("{}{}", root_device.path(), "p3");
+
+            run("partprobe".into(), &[root_device.path()])?;
+
+            println!("> Format partitions");
+            run(
+                "mkfs.vfat".into(),
+                &["-F".into(), "32".into(), root_device_partition_2],
+            )?;
+
+            run("mkfs.ext4".into(), &[root_device_partition_3])?;
 
             // TODO: save container to mount
 
