@@ -1,0 +1,11 @@
+FROM debian:latest
+
+RUN apt update -y
+RUN apt install -y xxd f3 vim e2fsprogs gdisk hdparm nvme-cli git build-essential curl
+
+# install rwsector
+RUN curl --proto '=https' --tlsv1.2 -sSf -o /root/rustup.sh https://sh.rustup.rs
+RUN sh /root/rustup.sh -y
+
+RUN cd /root/ && git clone https://github.com/jmpesp/rwsector.git && cd rwsector && /root/.cargo/bin/cargo build
+
