@@ -402,6 +402,11 @@ fn main() -> Result<()> {
             let mut grub_file =
                 File::create(format!("{}/etc/default/grub", mount_partition_3.dest()))?;
             writeln!(grub_file, "GRUB_DEVICE={}", p3_fs_uuid)?;
+            writeln!(
+                grub_file,
+                "GRUB_CMDLINE_LINUX_DEFAULT=\"quiet splash console=tty0 console=ttyS0,115200\"",
+            )?;
+            //
             drop(grub_file);
 
             let bind_dev = Mount::bind("/dev".into(), format!("{}/dev", mount_partition_3.dest()))?;
