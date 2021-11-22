@@ -27,6 +27,10 @@ enum Args {
         // Disk size in GB
         #[structopt(short, long, default_value = "8")]
         disk_size: usize,
+
+        // Optional root password
+        #[structopt(short, long)]
+        root_passwd: Option<String>,
     },
 }
 
@@ -179,6 +183,7 @@ fn main() -> Result<()> {
             image_name,
             output_file,
             disk_size,
+            root_passwd,
         } => {
             println!(
                 "Creating a bootable image {:?} out of {:?}",
@@ -454,11 +459,15 @@ fn main() -> Result<()> {
                 ],
             )?;
 
-            let root_passwd: String = rand::thread_rng()
-                .sample_iter(&Alphanumeric)
-                .take(16)
-                .map(char::from)
-                .collect();
+            let root_passwd: String = if let Some(v) = root_passwd {
+                v
+            } else {
+                rand::thread_rng()
+                    .sample_iter(&Alphanumeric)
+                    .take(16)
+                    .map(char::from)
+                    .collect()
+            };
 
             println!("> set root password as {}", root_passwd);
 
