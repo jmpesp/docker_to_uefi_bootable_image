@@ -311,6 +311,7 @@ fn main() -> Result<()> {
                     tempname.clone(),
                 ],
             )?;
+            run("docker".into(), &["stop".into(), tempname.clone()])?;
             run("docker".into(), &["rm".into(), tempname])?;
 
             run(
