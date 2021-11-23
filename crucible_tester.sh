@@ -3,7 +3,7 @@ set -e
 
 make
 
-docker build -t crucible-tester -f Dockerfile.crucible_tester .
+docker build -t crucible-tester -f Dockerfile.crucible_tester --no-cache .
 
 BYTES=$(docker inspect crucible-tester | jq .[0].Size)
 GBS=$(python3 -c "import math; print(1 + int(math.ceil((float(${BYTES}) / (1024.0**3)))));")
@@ -17,6 +17,9 @@ sudo \
         --output-file crucible-tester.img \
         --disk-size ${GBS} \
         --root-passwd crucible \
+        --flavor debian
+
+rm crucible-tester-sparse.img crucible-tester-sparse.img.gz
 
 virt-sparsify crucible-tester.img crucible-tester-sparse.img
 

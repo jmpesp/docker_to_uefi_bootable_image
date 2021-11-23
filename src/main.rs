@@ -34,6 +34,10 @@ enum Args {
 
         #[structopt(short, long, use_delimiter = true)]
         extra_packages: Vec<String>,
+
+        // OS flavor (debian, ubuntu, ...)
+        #[structopt(short, long)]
+        flavor: String,
     },
 }
 
@@ -188,6 +192,7 @@ fn main() -> Result<()> {
             disk_size,
             root_passwd,
             extra_packages,
+            flavor,
         } => {
             println!(
                 "Creating a bootable image {:?} out of {:?}",
@@ -297,6 +302,7 @@ fn main() -> Result<()> {
                 &[
                     "run".into(),
                     "-d".into(),
+                    "--entrypoint=/bin/sh".into(),
                     "--name".into(),
                     tempname.clone(),
                     image_name,
@@ -332,6 +338,11 @@ fn main() -> Result<()> {
                 format!("{}/etc/resolv.conf", mount_partition_3.dest()),
             )?;
 
+            let bind_dev = Mount::bind("/dev".into(), format!("{}/dev", mount_partition_3.dest()))?;
+            let bind_proc =
+                Mount::bind("/proc".into(), format!("{}/proc", mount_partition_3.dest()))?;
+            let bind_sys = Mount::bind("/sys".into(), format!("{}/sys", mount_partition_3.dest()))?;
+
             run(
                 "chroot".into(),
                 &[
@@ -341,6 +352,20 @@ fn main() -> Result<()> {
                     "-y".into(),
                 ],
             )?;
+
+            // stop to manually chroot and debug
+            //println!("> Enter some text when done");
+            //let mut s = String::new();
+            //std::io::stdin().read_line(&mut s).expect("Not a string?");
+
+            let kernel_pkg = match flavor.as_ref() {
+                "debian" => "linux-image-amd64",
+                "ubuntu" => "linux-image-generic",
+                _ => {
+                    bail!("flavor not supported!");
+                }
+            };
+
             run(
                 "chroot".into(),
                 &[
@@ -348,7 +373,7 @@ fn main() -> Result<()> {
                     "apt".into(),
                     "install".into(),
                     "-y".into(),
-                    "linux-image-amd64".into(),
+                    kernel_pkg.into(),
                     "systemd-sysv".into(),
                     "grub2-common".into(),
                     "grub-efi-amd64-bin".into(),
@@ -431,13 +456,7 @@ fn main() -> Result<()> {
                 grub_file,
                 "GRUB_CMDLINE_LINUX_DEFAULT=\"quiet splash console=tty0 console=ttyS0,115200\"",
             )?;
-            //
             drop(grub_file);
-
-            let bind_dev = Mount::bind("/dev".into(), format!("{}/dev", mount_partition_3.dest()))?;
-            let bind_proc =
-                Mount::bind("/proc".into(), format!("{}/proc", mount_partition_3.dest()))?;
-            let bind_sys = Mount::bind("/sys".into(), format!("{}/sys", mount_partition_3.dest()))?;
 
             run(
                 "grub-install".into(),
