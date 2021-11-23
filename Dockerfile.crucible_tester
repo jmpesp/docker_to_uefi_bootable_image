@@ -12,6 +12,8 @@ RUN \
     cd rwsector && \
     /root/.cargo/bin/cargo build --release && \
     cp ./target/release/rwsector / && \
-    rm -rf /root/.rustup /root/.cargo/ /root/rwsector/
+    rm -rf /root/.rustup /root/.cargo/ /root/rwsector/ && \
+    sed -i -e '/\/.cargo\/env"/d' /root/.bashrc && \
+    sed -i -e '/\/.cargo\/env"/d' /root/.profile
 
 RUN apt purge -y build-essential && apt autoremove -y && rm -rf /var/lib/apt/lists/*
