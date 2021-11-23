@@ -19,7 +19,7 @@ sudo \
         --root-passwd crucible \
         --flavor debian
 
-rm crucible-tester-sparse.img crucible-tester-sparse.img.gz
+rm crucible-tester-sparse.img crucible-tester-sparse.img.gz || true
 
 virt-sparsify crucible-tester.img crucible-tester-sparse.img
 
