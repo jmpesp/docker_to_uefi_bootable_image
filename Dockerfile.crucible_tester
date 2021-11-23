@@ -1,7 +1,9 @@
 FROM debian:11
 
 RUN apt update -y
-RUN apt install -y xxd f3 vim e2fsprogs gdisk hdparm nvme-cli git build-essential curl
+RUN apt install -y \
+    xxd f3 vim e2fsprogs gdisk hdparm \
+    nvme-cli git build-essential curl parted
 
 # install rwsector
 RUN \
@@ -17,3 +19,5 @@ RUN \
     sed -i -e '/\/.cargo\/env"/d' /root/.profile
 
 RUN apt purge -y build-essential && apt autoremove -y && rm -rf /var/lib/apt/lists/*
+
+RUN sed -i -e '/mesg/d' /root/.profile
