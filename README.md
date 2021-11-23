@@ -8,7 +8,8 @@ An example:
             --image-name debian:latest \
             --output-file debian.img \
             --disk-size 2 \
-            --root-passwd nNGQlzZxBYxBmPIgpEP5ezgbqPb4L2R4
+            --root-passwd nNGQlzZxBYxBmPIgpEP5ezgbqPb4L2R4 \
+            --flavor debian
 
 Test with QEMU:
 
@@ -17,5 +18,17 @@ Test with QEMU:
         -bios /usr/share/OVMF/OVMF_CODE.fd \
         -drive file=debian.img,if=virtio,format=raw
 
-Note this will only work on Linux!
+Mongo:
+
+    sudo \
+        ./target/debug/docker_to_uefi_bootable_image \
+            create \
+                --image-name mongo:4 \
+                --output-file mongo.img \
+                --disk-size 8 \
+                --root-passwd mongo \
+                --flavor ubuntu
+
+Only tested with Xubuntu.
+
 
