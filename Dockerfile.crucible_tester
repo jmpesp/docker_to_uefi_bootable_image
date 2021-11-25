@@ -3,7 +3,7 @@ FROM debian:11
 RUN apt update -y
 RUN apt install -y \
     xxd f3 vim e2fsprogs gdisk hdparm \
-    nvme-cli git build-essential curl parted
+    git build-essential curl parted
 
 # install rwsector
 RUN \
@@ -17,6 +17,12 @@ RUN \
     rm -rf /root/.rustup /root/.cargo/ /root/rwsector/ && \
     sed -i -e '/\/.cargo\/env"/d' /root/.bashrc && \
     sed -i -e '/\/.cargo\/env"/d' /root/.profile
+
+# install nvme-cli
+RUN cd /root/ && \
+    git clone --recurse-submodules -b v1.16 --single-branch https://github.com/linux-nvme/nvme-cli && \
+    cd nvme-cli && \
+    CFLAGS="-g -Wall -Werror" make
 
 RUN apt purge -y build-essential && apt autoremove -y && rm -rf /var/lib/apt/lists/*
 
