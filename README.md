@@ -29,6 +29,10 @@ Mongo:
                 --root-passwd mongo \
                 --flavor ubuntu
 
+Note that this will currently not give you an image that boots and runs Mongo,
+there's a bunch of manual work that's required, but the image will contain all
+the installed software.
+
 Only tested with Xubuntu.
 
 
