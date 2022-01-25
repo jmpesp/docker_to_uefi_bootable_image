@@ -3,7 +3,7 @@ FROM debian:11
 RUN apt update -y
 RUN apt install -y \
     xxd f3 vim e2fsprogs gdisk hdparm \
-    git build-essential curl parted
+    git build-essential curl parted procps fio
 
 # install rwsector
 RUN \
