@@ -21,7 +21,9 @@ sudo \
 
 rm crucible-tester-sparse.img crucible-tester-sparse.img.gz || true
 
-virt-sparsify crucible-tester.img crucible-tester-sparse.img
+sudo virt-sparsify crucible-tester.img crucible-tester-sparse.img
+
+sudo chown ${USER} crucible-tester.img crucible-tester-sparse.img
 
 pigz crucible-tester-sparse.img
 
