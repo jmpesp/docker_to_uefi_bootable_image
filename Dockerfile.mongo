@@ -1,0 +1,8 @@
+FROM mongo:4
+
+RUN apt update -y
+RUN apt install -y \
+    vim python3
+
+RUN apt purge -y build-essential && apt autoremove -y && rm -rf /var/lib/apt/lists/*
+

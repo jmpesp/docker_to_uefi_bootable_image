@@ -3,10 +3,12 @@ set -eu
 
 make
 
+docker build -t mongo-tester -f Dockerfile.mongo --no-cache .
+
 sudo \
     ./target/debug/docker_to_uefi_bootable_image \
         create \
-            --image-name mongo:4 \
+            --image-name mongo-tester \
             --output-file mongo.img \
             --disk-size 8 \
             --root-passwd mongo \
@@ -14,7 +16,9 @@ sudo \
 
 rm mongo-sparse.img mongo-sparse.img.gz || true
 
-virt-sparsify mongo.img mongo-sparse.img
+sudo virt-sparsify mongo.img mongo-sparse.img
+
+sudo chown ${USER} mongo.img mongo-sparse.img
 
 pigz mongo-sparse.img
 
