@@ -215,3 +215,53 @@ impl LoopbackDisk {
         self.root_device.path()
     }
 }
+
+pub struct PartitionedLoopbackDisk {
+    loopback_disk: LoopbackDisk,
+}
+
+impl PartitionedLoopbackDisk {
+    /// Consume a LoopbackDisk, produce a PartitionedLoopbackDisk
+    pub fn from(loopback_disk: LoopbackDisk) -> Result<Self> {
+        run(
+            "sgdisk".into(),
+            &[
+                "-n".into(),
+                "1:2048:4095".into(),
+                "-c".into(),
+                "1:\"BIOS Boot Partition\"".into(),
+                "-t".into(),
+                "1:ef02".into(),
+                loopback_disk.path(),
+            ],
+        )?;
+
+        run(
+            "sgdisk".into(),
+            &[
+                "-n".into(),
+                "2:4096:413695".into(),
+                "-c".into(),
+                "2:\"EFI System Partition\"".into(),
+                "-t".into(),
+                "2:ef00".into(),
+                loopback_disk.path(),
+            ],
+        )?;
+
+        run(
+            "sgdisk".into(),
+            &["-n".into(), "3:413696:".into(), loopback_disk.path()],
+        )?;
+
+        Ok(Self { loopback_disk })
+    }
+}
+
+/*
+// TODO needs root
+#[test]
+fn partition_disk() {
+    let dev = LoopbackDisk::new(1).unwrap();
+    let partitioned_disk = PartitionedLoopbackDisk::from(dev).unwrap();
+}*/
