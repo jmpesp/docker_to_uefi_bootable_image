@@ -210,4 +210,8 @@ impl LoopbackDisk {
             size_in_gb,
         })
     }
+
+    pub fn path(&self) -> String {
+        self.root_device.path()
+    }
 }
