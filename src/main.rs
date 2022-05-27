@@ -199,6 +199,7 @@ impl Mount {
 impl Drop for Mount {
     fn drop(&mut self) {
         println!("# Umount {}", self.dest);
+        run("sync".into(), &[]).expect("could not sync!");
         run("umount".into(), &[self.dest.clone()]).expect("could not umount!");
     }
 }
