@@ -61,61 +61,16 @@ fn main() -> Result<()> {
                 output_file, image_name,
             );
 
-            let working_dir = tempdir()?;
+            println!("> Creating {} GB blank disk", disk_size);
+            let blank_disk = LoopbackDisk::new(disk_size)?;
 
-            // Create blank file
-            let img_path = {
-                let mut img_path = working_dir.path().to_path_buf();
-                img_path.push("output.img");
-                img_path.into_os_string().into_string().unwrap()
-            };
-            println!("> Creating {} GB file at {:?}", disk_size, img_path,);
+            println!("> Creating partitioned disk");
+            let partitioned_disk = PartitionedLoopbackDisk::from(blank_disk)?;
 
-            let img = File::create(&img_path)?;
-            img.set_len((disk_size * 1024 * 1024 * 1024).try_into().unwrap())?;
-            drop(img);
+            println!("> Main disk at {}", partitioned_disk.path());
 
-            println!("> Create partitions");
-            run(
-                "sgdisk".into(),
-                &[
-                    "-n".into(),
-                    "1:2048:4095".into(),
-                    "-c".into(),
-                    "1:\"BIOS Boot Partition\"".into(),
-                    "-t".into(),
-                    "1:ef02".into(),
-                    img_path.clone(),
-                ],
-            )?;
-
-            run(
-                "sgdisk".into(),
-                &[
-                    "-n".into(),
-                    "2:4096:413695".into(),
-                    "-c".into(),
-                    "2:\"EFI System Partition\"".into(),
-                    "-t".into(),
-                    "2:ef00".into(),
-                    img_path.clone(),
-                ],
-            )?;
-
-            run(
-                "sgdisk".into(),
-                &["-n".into(), "3:413696:".into(), img_path.clone()],
-            )?;
-
-            println!("> Loopback main disk");
-            let root_device = LoopbackDevice::new(img_path.clone())?;
-
-            println!("> Main disk at {}", root_device.path());
-
-            let root_device_partition_2 = format!("{}{}", root_device.path(), "p2");
-            let root_device_partition_3 = format!("{}{}", root_device.path(), "p3");
-
-            run("partprobe".into(), &[root_device.path()])?;
+            let root_device_partition_2 = format!("{}{}", partitioned_disk.path(), "p2");
+            let root_device_partition_3 = format!("{}{}", partitioned_disk.path(), "p3");
 
             println!("> Format partitions");
             run(
@@ -128,7 +83,7 @@ fn main() -> Result<()> {
             println!("> Mount partitions");
 
             let mount_root_path = {
-                let mut path = working_dir.path().to_path_buf();
+                let mut path = partitioned_disk.working_dir().path().to_path_buf();
                 path.push("mnt");
                 path.into_os_string().into_string().unwrap()
             };
@@ -154,7 +109,7 @@ fn main() -> Result<()> {
             let tempname: String = uuid::Uuid::new_v4().to_string();
 
             let export_path = {
-                let mut path = working_dir.path().to_path_buf();
+                let mut path = partitioned_disk.working_dir().path().to_path_buf();
                 path.push("export.tar");
                 path.into_os_string().into_string().unwrap()
             };
@@ -300,7 +255,7 @@ fn main() -> Result<()> {
 
             let mut device_map =
                 File::create(format!("{}/boot/grub/device.map", mount_partition_3.dest()))?;
-            writeln!(device_map, "(hd0) {}", root_device.path())?;
+            writeln!(device_map, "(hd0) {}", partitioned_disk.path())?;
             drop(device_map);
 
             run(
@@ -327,7 +282,7 @@ fn main() -> Result<()> {
                     format!("--efi-directory={}/boot/efi/", mount_partition_3.dest()),
                     format!("--root-directory={}", mount_partition_3.dest()),
                     "--no-floppy".into(),
-                    root_device.path(),
+                    partitioned_disk.path(),
                 ],
             )?;
             run(
@@ -393,8 +348,12 @@ fn main() -> Result<()> {
             drop(mount_partition_2);
             drop(mount_partition_3);
 
-            println!("> Move {:?} to {:?}", img_path, output_file);
-            std::fs::rename(img_path, output_file)?;
+            println!(
+                "> Copy {:?} to {:?}",
+                partitioned_disk.img_path(),
+                output_file
+            );
+            std::fs::copy(partitioned_disk.img_path(), output_file)?;
         }
     }
 

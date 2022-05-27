@@ -214,6 +214,10 @@ impl LoopbackDisk {
     pub fn path(&self) -> String {
         self.root_device.path()
     }
+
+    pub fn img_path(&self) -> String {
+        self.img_path.clone()
+    }
 }
 
 pub struct PartitionedLoopbackDisk {
@@ -254,7 +258,21 @@ impl PartitionedLoopbackDisk {
             &["-n".into(), "3:413696:".into(), loopback_disk.path()],
         )?;
 
+        run("partprobe".into(), &[loopback_disk.path()])?;
+
         Ok(Self { loopback_disk })
+    }
+
+    pub fn path(&self) -> String {
+        self.loopback_disk.path()
+    }
+
+    pub fn working_dir(&self) -> &tempfile::TempDir {
+        &self.loopback_disk.working_dir
+    }
+
+    pub fn img_path(&self) -> String {
+        self.loopback_disk.img_path()
     }
 }
 
@@ -264,4 +282,5 @@ impl PartitionedLoopbackDisk {
 fn partition_disk() {
     let dev = LoopbackDisk::new(1).unwrap();
     let partitioned_disk = PartitionedLoopbackDisk::from(dev).unwrap();
-}*/
+}
+*/
