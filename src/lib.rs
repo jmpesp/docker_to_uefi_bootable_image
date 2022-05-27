@@ -174,3 +174,40 @@ impl Drop for Mount {
         run("umount".into(), &[self.dest.clone()]).expect("could not umount!");
     }
 }
+
+pub struct LoopbackDisk {
+    working_dir: tempfile::TempDir,
+    img_path: String,
+    root_device: LoopbackDevice,
+    size_in_gb: usize,
+}
+
+impl LoopbackDisk {
+    pub fn new(size_in_gb: usize) -> Result<Self> {
+        let working_dir = tempdir()?;
+
+        // Create blank file
+        let img_path = {
+            let mut img_path = working_dir.path().to_path_buf();
+            img_path.push("output.img");
+            if let Ok(s) = img_path.into_os_string().into_string() {
+                s
+            } else {
+                bail!("img_path.into_os_string().into_string()");
+            }
+        };
+
+        let img = File::create(&img_path)?;
+        img.set_len((size_in_gb * 1024 * 1024 * 1024).try_into()?)?;
+        drop(img);
+
+        let root_device = LoopbackDevice::new(img_path.clone())?;
+
+        Ok(Self {
+            working_dir,
+            img_path,
+            root_device,
+            size_in_gb,
+        })
+    }
+}
