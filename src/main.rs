@@ -55,24 +55,45 @@ fn output_stdout_string(output: &Output) -> String {
     text
 }
 
+fn output_stderr_string(output: &Output) -> String {
+    let mut text = output
+        .stderr
+        .iter()
+        .map(|x| (*x as char).to_string())
+        .collect::<String>();
+
+    if text.ends_with('\n') {
+        text.pop();
+    }
+
+    text
+}
+
 fn run(exe: String, args: &[String]) -> Result<Output> {
+    run_with_env(exe, args, &[])
+}
+
+fn run_with_env(exe: String, args: &[String], env_vars: &[(String, String)]) -> Result<Output> {
     let mut cmd = Command::new(exe);
 
     for arg in args {
         cmd.arg(arg);
     }
 
+    for env_var in env_vars {
+        cmd.env(&env_var.0, &env_var.1);
+    }
+
     // Debug: print what is about to run
-    println!("# {:?}", cmd);
+    println!("# {:?} {:?}", cmd, env_vars);
 
     let result = cmd.output()?;
 
     // Debug: print output
-
     println!("# {}", output_stdout_string(&result));
 
     if !result.status.success() {
-        bail!("Command failed!");
+        bail!("Command failed!\n{}", output_stderr_string(&result));
     }
 
     Ok(result)
