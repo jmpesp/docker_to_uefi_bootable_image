@@ -3,7 +3,9 @@ FROM debian:11
 RUN apt update -y
 RUN apt install -y \
     xxd f3 vim e2fsprogs gdisk hdparm \
-    git build-essential curl parted procps fio cloud-init openssh-server
+    git build-essential curl parted procps fio cloud-init openssh-server \
+    systemd-bootchart \
+    iputils-ping bind9-dnsutils
 
 # install rwsector
 RUN \

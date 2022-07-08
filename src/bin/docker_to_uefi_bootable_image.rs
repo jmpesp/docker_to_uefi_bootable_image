@@ -271,7 +271,7 @@ fn main() -> Result<()> {
             writeln!(grub_file, "GRUB_DEVICE={}", p3_fs_uuid)?;
             writeln!(
                 grub_file,
-                "GRUB_CMDLINE_LINUX_DEFAULT=\"quiet splash console=tty0 console=ttyS0,115200\"",
+                "GRUB_CMDLINE_LINUX_DEFAULT=\"quiet splash console=tty0 console=ttyS0,115200 init=/lib/systemd/systemd-bootchart\"",
             )?;
             drop(grub_file);
 
