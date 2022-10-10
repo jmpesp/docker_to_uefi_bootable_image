@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-make
+make build
 
 docker build -t crucible-tester -f Dockerfile.crucible_tester --no-cache .
 

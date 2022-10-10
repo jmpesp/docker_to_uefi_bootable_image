@@ -1,7 +1,7 @@
 #!/bin/bash
 set -eu
 
-make
+make build
 
 docker build -t mongo-tester -f Dockerfile.mongo --no-cache .
 
