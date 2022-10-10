@@ -30,3 +30,7 @@ RUN cd /root/ && \
 RUN apt purge -y build-essential && apt autoremove -y && rm -rf /var/lib/apt/lists/*
 
 RUN sed -i -e '/mesg/d' /root/.profile
+
+# disable ipv6 for now
+RUN echo 'net.ipv6.conf.all.disable_ipv6 = 1' >> /etc/sysctl.conf
+
