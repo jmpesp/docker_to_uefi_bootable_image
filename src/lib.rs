@@ -5,12 +5,9 @@
 //
 
 use std::fs::File;
-use std::io::Write;
-use std::path::PathBuf;
 use std::process::{Command, Output};
 
 use anyhow::{bail, Result};
-use rand::{distributions::Alphanumeric, Rng};
 use tempfile::tempdir;
 
 pub fn output_stdout_string(output: &Output) -> String {
@@ -179,7 +176,6 @@ pub struct LoopbackDisk {
     working_dir: tempfile::TempDir,
     img_path: String,
     root_device: LoopbackDevice,
-    size_in_gb: usize,
 }
 
 impl LoopbackDisk {
@@ -207,7 +203,6 @@ impl LoopbackDisk {
             working_dir,
             img_path,
             root_device,
-            size_in_gb,
         })
     }
 

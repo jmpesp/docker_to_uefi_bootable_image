@@ -7,11 +7,10 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
-use std::process::{Command, Output};
+use std::process::Command;
 
 use anyhow::{bail, Result};
 use rand::{distributions::Alphanumeric, Rng};
-use tempfile::tempdir;
 
 use clap::{Parser, ValueEnum};
 
