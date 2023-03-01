@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1"
 tempfile = "3"
-structopt = "0.3"
+clap = { version = "4.1", features = ["derive"] }
 uuid = { version = "0.8", features = [ "serde", "v4" ] }
 rand = "0.8.4"
 

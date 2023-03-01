@@ -13,39 +13,45 @@ use anyhow::{bail, Result};
 use rand::{distributions::Alphanumeric, Rng};
 use tempfile::tempdir;
 
-use structopt::StructOpt;
+use clap::{Parser, ValueEnum};
 
 use docker_to_uefi_bootable_image::*;
 
-#[derive(Debug, StructOpt)]
-#[structopt(about = "docker to uefi bootable image")]
+#[derive(Debug, Parser)]
+#[clap(about = "docker to uefi bootable image")]
 enum Args {
     Create {
-        #[structopt(short, long)]
+        #[clap(short, long)]
         image_name: String,
 
-        #[structopt(short, long, parse(from_os_str))]
+        #[clap(short, long)]
         output_file: PathBuf,
 
         // Disk size in GB
-        #[structopt(short, long, default_value = "8")]
+        #[clap(short, long, default_value = "8")]
         disk_size: usize,
 
         // Optional root password
-        #[structopt(short, long)]
+        #[clap(short, long)]
         root_passwd: Option<String>,
 
-        #[structopt(short, long, use_delimiter = true)]
+        #[clap(short, long, value_delimiter = ',')]
         extra_packages: Vec<String>,
 
         // OS flavor (debian, ubuntu, ...)
-        #[structopt(short, long)]
-        flavor: String,
+        #[clap(short, long)]
+        flavor: OsFlavor,
     },
 }
 
+#[derive(Debug, Clone, ValueEnum)]
+enum OsFlavor {
+    Debian,
+    Ubuntu,
+}
+
 fn main() -> Result<()> {
-    let args = Args::from_args_safe()?;
+    let args = Args::parse();
 
     match args {
         Args::Create {
@@ -175,12 +181,9 @@ fn main() -> Result<()> {
             //let mut s = String::new();
             //std::io::stdin().read_line(&mut s).expect("Not a string?");
 
-            let kernel_pkg = match flavor.as_ref() {
-                "debian" => "linux-image-amd64",
-                "ubuntu" => "linux-image-generic",
-                _ => {
-                    bail!("flavor not supported!");
-                }
+            let kernel_pkg = match flavor {
+                OsFlavor::Debian => "linux-image-amd64",
+                OsFlavor::Ubuntu => "linux-image-generic",
             };
 
             run(
