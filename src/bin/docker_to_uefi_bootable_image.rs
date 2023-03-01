@@ -48,6 +48,7 @@ enum Args {
 enum OsFlavor {
     Debian,
     Ubuntu,
+    Alpine,
 }
 
 fn main() -> Result<()> {
@@ -166,53 +167,134 @@ fn main() -> Result<()> {
                 Mount::bind("/proc".into(), format!("{}/proc", mount_partition_3.dest()))?;
             let bind_sys = Mount::bind("/sys".into(), format!("{}/sys", mount_partition_3.dest()))?;
 
-            run(
-                "chroot".into(),
-                &[
-                    mount_partition_3.dest(),
-                    "apt".into(),
-                    "update".into(),
-                    "-y".into(),
-                ],
-            )?;
+            // Update package repos
+            match flavor {
+                OsFlavor::Debian | OsFlavor::Ubuntu => {
+                    run(
+                        "chroot".into(),
+                        &[
+                            mount_partition_3.dest(),
+                            "apt".into(),
+                            "update".into(),
+                            "-y".into(),
+                        ],
+                    )?;
+                }
+
+                OsFlavor::Alpine => {
+                    run(
+                        "chroot".into(),
+                        &[mount_partition_3.dest(), "apk".into(), "update".into()],
+                    )?;
+                }
+            }
 
             // stop to manually chroot and debug
             //println!("> Enter some text when done");
             //let mut s = String::new();
             //std::io::stdin().read_line(&mut s).expect("Not a string?");
 
-            let kernel_pkg = match flavor {
-                OsFlavor::Debian => "linux-image-amd64",
-                OsFlavor::Ubuntu => "linux-image-generic",
-            };
+            // Install necessary installer packages for EFI
+            match flavor {
+                OsFlavor::Debian | OsFlavor::Ubuntu => {
+                    let kernel_pkg = match flavor {
+                        OsFlavor::Debian => "linux-image-amd64",
+                        OsFlavor::Ubuntu => "linux-image-generic",
+                        _ => panic!("wat"),
+                    };
 
-            run(
-                "chroot".into(),
-                &[
-                    mount_partition_3.dest(),
-                    "apt".into(),
-                    "install".into(),
-                    "-y".into(),
-                    kernel_pkg.into(),
-                    "systemd-sysv".into(),
-                    "grub2-common".into(),
-                    "grub-efi-amd64-bin".into(),
-                    "initramfs-tools".into(),
-                ],
-            )?;
+                    run(
+                        "chroot".into(),
+                        &[
+                            mount_partition_3.dest(),
+                            "apt".into(),
+                            "install".into(),
+                            "-y".into(),
+                            kernel_pkg.into(),
+                            "systemd-sysv".into(),
+                            "grub2-common".into(),
+                            "grub-efi-amd64-bin".into(),
+                            "initramfs-tools".into(),
+                        ],
+                    )?;
 
-            if !extra_packages.is_empty() {
-                println!("> install extra packages");
+                    // If Debian or Ubuntu, install extra packages - there isn't
+                    // separate disk like Alpine.
+                    if !extra_packages.is_empty() {
+                        println!("> install extra packages");
 
-                let mut args = vec![
-                    mount_partition_3.dest(),
-                    "apt".into(),
-                    "install".into(),
-                    "-y".into(),
-                ];
-                args.extend_from_slice(&extra_packages[..]);
+                        let mut args = vec![
+                            mount_partition_3.dest(),
+                            "apt".into(),
+                            "install".into(),
+                            "-y".into(),
+                        ];
+                        args.extend_from_slice(&extra_packages[..]);
 
-                run("chroot".into(), &args)?;
+                        run("chroot".into(), &args)?;
+                    }
+                }
+
+                OsFlavor::Alpine => {
+                    run(
+                        "chroot".into(),
+                        &[
+                            mount_partition_3.dest(),
+                            "apk".into(),
+                            "add".into(),
+                            "grub-efi".into(),
+                            "mkinitfs".into(),
+                            "alpine-conf".into(),
+                            "linux-lts".into(),
+                        ],
+                    )?;
+
+                    // Populate /answers for setup-alpine
+                    let mut answers =
+                        File::create(format!("{}/answers", mount_partition_3.dest()))?;
+
+                    writeln!(
+                        answers,
+                        r##"
+KEYMAPOPTS="us us"
+HOSTNAMEOPTS="-n alpine"
+DEVDOPTS="mdev"
+INTERFACESOPTS="auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+    hostname alpine
+"
+DNSOPTS="-d example.com 8.8.8.8"
+TIMEZONEOPTS="-z UTC"
+APKREPOSOPTS="-1"
+SSHDOPTS="-c openssh"
+NTPOPTS="-c openntpd"
+DISKOPTS="-m sys /"
+"##
+                    )?;
+
+                    drop(answers);
+
+                    // Run setup-alpine
+                    run_with_env(
+                        "chroot".into(),
+                        &[
+                            mount_partition_3.dest(),
+                            "setup-alpine".into(),
+                            "-q".into(),
+                            "-f".into(),
+                            "/answers".into(),
+                        ],
+                        &[("USE_EFI".into(), "1".into())],
+                    )?;
+
+                    run(
+                        "chroot".into(),
+                        &[mount_partition_3.dest(), "rm".into(), "/answers".into()],
+                    )?;
+                }
             }
 
             println!("> write fstab");
@@ -272,9 +354,17 @@ fn main() -> Result<()> {
             let mut grub_file =
                 File::create(format!("{}/etc/default/grub", mount_partition_3.dest()))?;
             writeln!(grub_file, "GRUB_DEVICE={}", p3_fs_uuid)?;
+            writeln!(grub_file, "GRUB_TERMINAL=\"serial console\"")?;
             writeln!(
                 grub_file,
-                "GRUB_CMDLINE_LINUX_DEFAULT=\"quiet splash console=tty0 console=ttyS0,115200 init=/lib/systemd/systemd-bootchart\"",
+                "{}",
+                match flavor {
+                    OsFlavor::Debian | OsFlavor::Ubuntu =>
+                        "GRUB_CMDLINE_LINUX_DEFAULT=\"quiet splash console=ttyS0,115200 init=/lib/systemd/systemd-bootchart\"",
+
+                    OsFlavor::Alpine =>
+                        "GRUB_CMDLINE_LINUX_DEFAULT=\"quiet splash console=ttyS0,115200 rootfstype=ext4 modules=sd-mod,usb-storage,nvme,ext4\"",
+                }
             )?;
             drop(grub_file);
 
@@ -308,15 +398,76 @@ fn main() -> Result<()> {
                 ],
             )?;
 
-            println!("> update-initramfs");
-            run(
-                "chroot".into(),
-                &[
-                    mount_partition_3.dest(),
-                    "update-initramfs".into(),
-                    "-u".into(),
-                ],
-            )?;
+            //println!("> Enter some text when done");
+            //let mut s = String::new();
+            //std::io::stdin().read_line(&mut s).expect("Not a string?");
+
+            match flavor {
+                OsFlavor::Debian | OsFlavor::Ubuntu => {
+                    println!("> update-initramfs");
+                    run(
+                        "chroot".into(),
+                        &[
+                            mount_partition_3.dest(),
+                            "update-initramfs".into(),
+                            "-u".into(),
+                        ],
+                    )?;
+                }
+
+                OsFlavor::Alpine => {
+                    // by default, mkinitfs will use the docker host's kernel version
+                    println!("> get kernel version");
+
+                    let mut kernelversion: Vec<String> =
+                        std::fs::read_dir(format!("{}/lib/modules/", mount_partition_3.dest()))?
+                            .collect::<Result<Vec<std::fs::DirEntry>, std::io::Error>>()?
+                            .into_iter()
+                            .map(|x| {
+                                let full_path = x.path();
+                                let last_part = full_path.file_name().unwrap();
+                                last_part.to_os_string().into_string().unwrap()
+                            })
+                            .collect();
+
+                    println!("detected kernel versions {:?}", kernelversion);
+                    if kernelversion.len() != 1 {
+                        bail!("incorrect number of kernel vers");
+                    }
+
+                    let kernelversion: String = kernelversion.pop().unwrap();
+
+                    println!("> mkinitfs");
+                    run(
+                        "chroot".into(),
+                        &[
+                            mount_partition_3.dest(),
+                            "mkinitfs".into(),
+                            "-c".into(),
+                            "/etc/mkinitfs/mkinitfs.conf".into(),
+                            "-b".into(),
+                            "/".into(),
+                            kernelversion,
+                        ],
+                    )?;
+                }
+            }
+
+            // alpine requires changing /etc/inittab for a login console on
+            // ttyS0
+            if matches!(flavor, OsFlavor::Alpine) {
+                run(
+                    "chroot".into(),
+                    &[
+                        mount_partition_3.dest(),
+                        "sed".into(),
+                        "-i".into(),
+                        "-e".into(),
+                        "s/^#ttyS0/ttyS0/g".into(),
+                        "/etc/inittab".into(),
+                    ],
+                )?;
+            }
 
             let root_passwd: String = if let Some(v) = root_passwd {
                 v

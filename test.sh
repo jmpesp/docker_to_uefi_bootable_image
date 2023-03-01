@@ -20,7 +20,7 @@ sudo qemu-system-x86_64 \
     -enable-kvm \
     -m 2g \
     -bios /usr/share/OVMF/OVMF_CODE.fd \
-    -drive file="${OVERLAY}",if=virtio #\
-#    -drive file=nvme_file.qcow2,if=none,format=qcow2,id=nvme1 \
-#    -device nvme,drive=nvme1,serial=nvme-1,addr=0x4
+    -drive file="${OVERLAY}",if=none,format=qcow2,id=nvme1 \
+    -device nvme,drive=nvme1,serial=nvme-1,addr=0x4
 
+#    -drive file="${OVERLAY}",if=virtio #\
