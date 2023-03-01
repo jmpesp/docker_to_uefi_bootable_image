@@ -7,9 +7,6 @@ then
     exit 1
 fi
 
-#rm nvme_file.qcow2 || true
-#qemu-img create -f qcow2 nvme_file.qcow2 4G
-
 BASE="${1}"
 OVERLAY="${2}"
 
@@ -23,4 +20,3 @@ sudo qemu-system-x86_64 \
     -drive file="${OVERLAY}",if=none,format=qcow2,id=nvme1 \
     -device nvme,drive=nvme1,serial=nvme-1,addr=0x4
 
-#    -drive file="${OVERLAY}",if=virtio #\
