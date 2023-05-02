@@ -244,21 +244,29 @@ fn main() -> Result<()> {
                             "grub-efi".into(),
                             "mkinitfs".into(),
                             "alpine-conf".into(),
-                            "linux-lts".into(),
+                            "busybox-openrc".into(),
                         ],
                     )?;
+
+                    // After installing busybox-openrc, set a drop command so we can umount later
+                    let drop_command = DropCommand::new(
+                        "chroot".into(),
+                        vec![mount_partition_3.dest(), "openrc".into(), "shutdown".into()],
+                    );
 
                     // Populate /answers for setup-alpine
                     let mut answers =
                         File::create(format!("{}/answers", mount_partition_3.dest()))?;
 
+                    // See: https://github.com/alpinelinux/alpine-conf/blob/master/setup-alpine.in
                     writeln!(
                         answers,
                         r##"
 KEYMAPOPTS="us us"
-HOSTNAMEOPTS="-n alpine"
+HOSTNAMEOPTS="alpine"
 DEVDOPTS="mdev"
-INTERFACESOPTS="auto lo
+INTERFACESOPTS="
+auto lo
 iface lo inet loopback
 
 auto eth0
@@ -266,33 +274,219 @@ iface eth0 inet dhcp
     hostname alpine
 "
 DNSOPTS="-d example.com 8.8.8.8"
-TIMEZONEOPTS="-z UTC"
+TIMEZONEOPTS="UTC"
 APKREPOSOPTS="-1"
-SSHDOPTS="-c openssh"
-NTPOPTS="-c openntpd"
-DISKOPTS="-m sys /"
-"##
+USEROPTS="-a -u -g audio,video,netdev alpine"
+SSHDOPTS="openssh"
+NTPOPTS="chrony"
+DISKOPTS="-m sys -k virt /tmp/mnt_loop/"
+"##,
                     )?;
 
                     drop(answers);
 
-                    // Run setup-alpine
-                    run_with_env(
+                    // insane but it works
+                    /*
+                    run(
                         "chroot".into(),
                         &[
                             mount_partition_3.dest(),
-                            "setup-alpine".into(),
-                            "-q".into(),
-                            "-f".into(),
-                            "/answers".into(),
+                            "mkdir".into(),
+                            "/tmp/mnt_loop".into(),
                         ],
-                        &[("USE_EFI".into(), "1".into())],
+                    )?;
+
+                    let bind_mnt_loop = Mount::bind(
+                        mount_partition_3.dest(),
+                        format!("{}/tmp/mnt_loop", mount_partition_3.dest()),
                     )?;
 
                     run(
                         "chroot".into(),
-                        &[mount_partition_3.dest(), "rm".into(), "/answers".into()],
+                        &[
+                            mount_partition_3.dest(),
+                            "ls".into(),
+                            "/tmp/mnt_loop".into(),
+                        ],
                     )?;
+                    */
+
+                    //println!("> Enter some text when done");
+                    //let mut s = String::new();
+                    //std::io::stdin().read_line(&mut s).expect("Not a string?");
+
+                    // Run setup-alpine in quick mode
+                    //
+                    // Note: this starts crond and acpid, which will hold open files under /dev/,
+                    // preventing unmounts! that's why we have the openrc shutdown drop command.
+                    run_with_env(
+                        "chroot".into(),
+                        &[
+                            mount_partition_3.dest(),
+                            "/bin/sh".into(),
+                            "-x".into(), // XXX -e fails!
+                            "/sbin/setup-alpine".into(),
+                            "-e".into(), // empty root password
+                            "-f".into(),
+                            "-q".into(),
+                            "/answers".into(),
+                        ],
+                        &[
+                            ("USE_EFI".into(), "1".into()),
+                            ("BOOTLOADER".into(), "none".into()),
+                        ],
+                    )?;
+
+                    //drop(bind_mnt_loop);
+
+                    //run(
+                    //    "chroot".into(),
+                    //    &[mount_partition_3.dest(), "rm".into(), "/answers".into()],
+                    //)?;
+
+                    //run(
+                    //    "chroot".into(),
+                    //    &[mount_partition_3.dest(), "mkdir".into(), "/sysroot".into()],
+                    //)?;
+
+                    // install what's in /etc/apk/world
+                    let world_lines: Vec<String> = std::fs::read_to_string(format!(
+                        "{}/etc/apk/world",
+                        mount_partition_3.dest(),
+                    ))?
+                    .split('\n')
+                    .map(|x| x.to_string())
+                    .filter(|x| !x.is_empty())
+                    .collect();
+
+                    run(
+                        "chroot".into(),
+                        &vec![
+                            vec![
+                                mount_partition_3.dest(),
+                                "apk".into(),
+                                "add".into(),
+                                // XXX --root /tmp/mnt_loop --overlay-from-stdin
+                                //"--initdb".into(),
+                                "--update-cache".into(),
+                                "--clean-protected".into(),
+                                // XXX from /etc/apk/repositories instead
+                                "--repository".into(),
+                                "https://dl-cdn.alpinelinux.org/alpine/v3.17/main".into(),
+                                "--repository".into(),
+                                "https://dl-cdn.alpinelinux.org/alpine/v3.17/community".into(),
+                                // standard packages
+                                "alpine-base".into(),
+                                "linux-virt".into(),
+                                // XXX "linux-edge".into(),
+                                // XXX "linux-lts".into(),
+                                // setup-alpine running with --quick doesn't install these!
+                                "openssh".into(),
+                                "chrony".into(),
+                            ],
+                            world_lines,
+                        ]
+                        .concat(),
+                    )?;
+
+                    // SUPER important to run this before setting runlevel stuff
+                    // below. In particular, `killprocs` will nuke the host
+                    // machine's processes!
+                    drop(drop_command);
+
+                    // whyyyyyyyyyyyy does something set acpid and crond to
+                    // sysinit?!
+                    run(
+                        "chroot".into(),
+                        &[
+                            mount_partition_3.dest(),
+                            "rc-update".into(),
+                            "delete".into(),
+                            "acpid".into(),
+                            "sysinit".into(),
+                        ],
+                    )?;
+                    run(
+                        "chroot".into(),
+                        &[
+                            mount_partition_3.dest(),
+                            "rc-update".into(),
+                            "delete".into(),
+                            "crond".into(),
+                            "sysinit".into(),
+                        ],
+                    )?;
+
+                    // https://superuser.com/questions/193115/root-file-system-is-mounted-read-only-on-boot-on-gentoo-linux
+                    // install alpine, then look at `find /etc/runlevels/ | sort`
+                    // also inspect `rc-update show -v | grep -v '| *$'`
+                    // XXX shouldn't something do this already?
+                    let runlevel_settings = [
+                        // boot
+                        ("bootmisc", "boot"),
+                        ("hostname", "boot"),
+                        ("hwclock", "boot"),
+                        ("modules", "boot"),
+                        ("networking", "boot"),
+                        ("seedrng", "boot"),
+                        ("swap", "boot"),
+                        ("sysctl", "boot"),
+                        ("syslog", "boot"),
+                        //("netmount", "boot"),
+                        //("procfs", "boot"),
+                        //("termencoding", "boot"),
+                        // sysinit
+                        ("devfs", "sysinit"),
+                        ("dmesg", "sysinit"),
+                        ("hwdrivers", "sysinit"),
+                        ("mdev", "sysinit"),
+                        //("modloop", "sysinit"),
+                        // default
+                        //("root", "default"),
+                        //("sysfs", "default"),
+                        //("fsck", "default"),
+                        //("localmount", "default"),
+                        // services
+                        ("acpid", "default"),
+                        ("crond", "default"),
+                        ("sshd", "default"),
+                        ("chronyd", "default"),
+                        // shutdown
+                        ("killprocs", "shutdown"),
+                        ("mount-ro", "shutdown"),
+                        ("savecache", "shutdown"),
+                    ];
+
+                    for (service, runlevel) in runlevel_settings {
+                        /*
+                        run(
+                            "chroot".into(),
+                            &[
+                                mount_partition_3.dest(),
+                                "rc-service".into(),
+                                service.into(),
+                                "start".into(),
+                                "--ifstopped".into(),
+                                // suppress errors
+                                "-q".into(),
+                                "-q".into(),
+                            ],
+                        )?;
+                        */
+                        run(
+                            "chroot".into(),
+                            &[
+                                mount_partition_3.dest(),
+                                "rc-update".into(),
+                                "add".into(),
+                                service.into(),
+                                runlevel.into(),
+                            ],
+                        )?;
+                    }
+
+                    // XXX setup-user
+                    // XXX setup-cloud-init, run at boot
                 }
             }
 
@@ -308,7 +502,11 @@ DISKOPTS="-m sys /"
             .filter(|x| x.starts_with("UUID="))
             .collect();
 
-            writeln!(fstab, "{} / ext4 errors=remount-ro 0 1", p3_fs_uuid)?;
+            writeln!(
+                fstab,
+                "{} / ext4 defaults,errors=remount-ro 0 1",
+                p3_fs_uuid
+            )?;
 
             let p2_fs_uuid: String = output_stdout_string(&run(
                 "blkid".into(),
@@ -320,12 +518,58 @@ DISKOPTS="-m sys /"
 
             writeln!(fstab, "{} /boot/efi vfat defaults 0 2", p2_fs_uuid)?;
 
+            if matches!(flavor, OsFlavor::Alpine) {
+                writeln!(fstab, "tmpfs /tmp tmpfs nosuid,nodev 0 0")?;
+
+                // use partition 4 as swap
+                let swap_partition = format!("{}{}", partitioned_disk.path(), "p4");
+
+                run("mkswap".into(), &[swap_partition.clone()])?;
+
+                let swap_uuid: String = output_stdout_string(&run(
+                    "blkid".into(),
+                    &["-o".into(), "export".into(), swap_partition],
+                )?)
+                .split('\n')
+                .filter(|x| x.starts_with("UUID="))
+                .collect();
+
+                writeln!(fstab, "{} swap swap defaults 0 0", swap_uuid)?;
+            }
+
             drop(fstab);
 
             run(
                 "cat".into(),
                 &[format!("{}/etc/fstab", mount_partition_3.dest())],
             )?;
+
+            println!("> write hosts");
+
+            // XXX hostname parameter
+            let mut hosts = File::create(format!("{}/etc/hosts", mount_partition_3.dest()))?;
+            writeln!(
+                hosts,
+                r#"
+127.0.0.1	localhost localhost.localdomain
+127.0.1.1	alpine
+
+# The following lines are desirable for IPv6 capable hosts
+::1     ip6-localhost ip6-loopback
+fe00::0 ip6-localnet
+ff00::0 ip6-mcastprefix
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+                "#,
+            )?;
+
+            drop(hosts);
+
+            println!("> write hostname");
+
+            let mut hostname = File::create(format!("{}/etc/hostname", mount_partition_3.dest()))?;
+            writeln!(hostname, "alpine")?;
+            drop(hostname);
 
             println!("> install grub");
 
@@ -362,7 +606,7 @@ DISKOPTS="-m sys /"
                         "GRUB_CMDLINE_LINUX_DEFAULT=\"quiet splash console=ttyS0,115200 init=/lib/systemd/systemd-bootchart\"",
 
                     OsFlavor::Alpine =>
-                        "GRUB_CMDLINE_LINUX_DEFAULT=\"quiet splash console=ttyS0,115200 rootfstype=ext4 modules=sd-mod,usb-storage,nvme,ext4\"",
+                        "GRUB_CMDLINE_LINUX_DEFAULT=\"quiet splash console=tty0 console=ttyS0,115200 rootfstype=ext4 modules=sd-mod,usb-storage,nvme,ext4\"",
                 }
             )?;
             drop(grub_file);
@@ -396,10 +640,6 @@ DISKOPTS="-m sys /"
                     "/boot/grub/device.map".into(),
                 ],
             )?;
-
-            //println!("> Enter some text when done");
-            //let mut s = String::new();
-            //std::io::stdin().read_line(&mut s).expect("Not a string?");
 
             match flavor {
                 OsFlavor::Debian | OsFlavor::Ubuntu => {
@@ -452,9 +692,9 @@ DISKOPTS="-m sys /"
                 }
             }
 
-            // alpine requires changing /etc/inittab for a login console on
-            // ttyS0
             if matches!(flavor, OsFlavor::Alpine) {
+                // alpine requires changing /etc/inittab for a login console on
+                // ttyS0
                 run(
                     "chroot".into(),
                     &[
@@ -466,6 +706,21 @@ DISKOPTS="-m sys /"
                         "/etc/inittab".into(),
                     ],
                 )?;
+
+                // alpine also tries to run sysinit and boot in parallel?!
+                /*
+                run(
+                    "chroot".into(),
+                    &[
+                        mount_partition_3.dest(),
+                        "sed".into(),
+                        "-i".into(),
+                        "-e".into(),
+                        "s_::sysinit:/sbin/openrc boot_::wait:/sbin/openrc boot_g".into(),
+                        "/etc/inittab".into(),
+                    ],
+                )?;
+                */
             }
 
             let root_passwd: String = if let Some(v) = root_passwd {
