@@ -5,7 +5,7 @@
 //
 
 use std::fs::File;
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 use anyhow::{bail, Result};
 use tempfile::tempdir;
@@ -53,16 +53,20 @@ pub fn run_with_env(exe: String, args: &[String], env_vars: &[(String, String)])
         cmd.env(&env_var.0, &env_var.1);
     }
 
+    // no stdin
+    cmd.stdin(Stdio::null());
+
     // Debug: print what is about to run
     println!("# {:?} {:?}", cmd, env_vars);
 
     let result = cmd.output()?;
 
     // Debug: print output
-    println!("# {}", output_stdout_string(&result));
+    println!("O# {}", output_stdout_string(&result));
+    println!("E# {}", output_stderr_string(&result));
 
     if !result.status.success() {
-        bail!("Command failed!\n{}", output_stderr_string(&result));
+        bail!("Command failed!");
     }
 
     Ok(result)
