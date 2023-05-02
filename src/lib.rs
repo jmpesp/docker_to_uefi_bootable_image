@@ -226,35 +226,59 @@ pub struct PartitionedLoopbackDisk {
 impl PartitionedLoopbackDisk {
     /// Consume a LoopbackDisk, produce a PartitionedLoopbackDisk
     pub fn from(loopback_disk: LoopbackDisk) -> Result<Self> {
+        // BIOS boot
+        // XXX not used!
         run(
             "sgdisk".into(),
             &[
                 "-n".into(),
-                "1:2048:4095".into(),
+                "0:0:+2M".into(),
                 "-c".into(),
-                "1:\"BIOS Boot Partition\"".into(),
+                "0:\"BIOS Boot Partition\"".into(),
                 "-t".into(),
-                "1:ef02".into(),
+                "0:ef02".into(),
                 loopback_disk.path(),
             ],
         )?;
 
+        // EFI partition
         run(
             "sgdisk".into(),
             &[
                 "-n".into(),
-                "2:4096:413695".into(),
+                "0:0:+512M".into(),
                 "-c".into(),
-                "2:\"EFI System Partition\"".into(),
+                "0:\"EFI System Partition\"".into(),
                 "-t".into(),
-                "2:ef00".into(),
+                "0:ef00".into(),
                 loopback_disk.path(),
             ],
         )?;
 
+        // main install
         run(
             "sgdisk".into(),
-            &["-n".into(), "3:413696:".into(), loopback_disk.path()],
+            &[
+                "-n".into(),
+                "0:0:-100M".into(),
+                "-c".into(),
+                "0:\"Root Partition\"".into(),
+                loopback_disk.path(),
+            ],
+        )?;
+
+        // swap
+        run(
+            "sgdisk".into(),
+            &[
+                "-n".into(),
+                "0:0:".into(),
+                "-c".into(),
+                "0:\"Swap Partition\"".into(),
+                "-t".into(),
+                "8200".into(),
+                loopback_disk.path(),
+            ],
         )?;
 
         run("partprobe".into(), &[loopback_disk.path()])?;
@@ -283,3 +307,20 @@ fn partition_disk() {
     let partitioned_disk = PartitionedLoopbackDisk::from(dev).unwrap();
 }
 */
+
+pub struct DropCommand {
+    pub command: String,
+    pub args: Vec<String>,
+}
+
+impl DropCommand {
+    pub fn new(command: String, args: Vec<String>) -> Self {
+        Self { command, args }
+    }
+}
+
+impl Drop for DropCommand {
+    fn drop(&mut self) {
+        run(self.command.clone(), &self.args).expect("could not drop!");
+    }
+}
