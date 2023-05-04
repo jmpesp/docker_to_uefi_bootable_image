@@ -210,6 +210,7 @@ fn main() -> Result<()> {
                             "install".into(),
                             "-y".into(),
                             kernel_pkg.into(),
+                            format!("{}-dbg", kernel_pkg),
                             "systemd-sysv".into(),
                             "grub2-common".into(),
                             "grub-efi-amd64-bin".into(),
@@ -348,6 +349,35 @@ DISKOPTS="-m sys /"
                     "-p".into(),
                     format!("{}/etc/default/", mount_partition_3.dest()),
                 ],
+            )?;
+
+            // enable kdump
+            let mut kdump_file =
+                File::create(format!("{}/etc/default/kdump-tools", mount_partition_3.dest()))?;
+            writeln!(kdump_file, "USE_KDUMP=1")?;
+            drop(kdump_file);
+
+            // set sysrq so we can trigger crashes
+            let mut sysctl_file =
+                File::create(format!("{}/etc/sysctl.d/999-custom.conf", mount_partition_3.dest()))?;
+            writeln!(sysctl_file, "kernel.sysrq=1")?;
+            drop(sysctl_file);
+
+            // alter what grub sets for crashkernel memory
+            run(
+                "chroot".into(),
+                &[
+                    mount_partition_3.dest(),
+                    "sed".into(),
+                    "-i".into(),
+                    "-e".into(),
+                    "s/crashkernel=.*\"$/crashkernel=512M\"/g".into(),
+                    "/etc/default/grub.d/kdump-tools.cfg".into(),
+                ],
+            )?;
+            run(
+                "cat".into(),
+                &[format!("{}/etc/default/grub.d/kdump-tools.cfg", mount_partition_3.dest())],
             )?;
 
             let mut grub_file =
