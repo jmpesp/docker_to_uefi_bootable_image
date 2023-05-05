@@ -268,18 +268,19 @@ impl PartitionedLoopbackDisk {
         )?;
 
         // swap
-        run(
-            "sgdisk".into(),
-            &[
-                "-n".into(),
-                "0:0:".into(),
-                "-c".into(),
-                "0:\"Swap Partition\"".into(),
-                "-t".into(),
-                "8200".into(),
-                loopback_disk.path(),
-            ],
-        )?;
+        // XXX cloud-init cannot grow root partition if swap is right after!
+        //run(
+        //    "sgdisk".into(),
+        //    &[
+        //        "-n".into(),
+        //        "0:0:".into(),
+        //        "-c".into(),
+        //        "0:\"Swap Partition\"".into(),
+        //        "-t".into(),
+        //        "8200".into(),
+        //        loopback_disk.path(),
+        //    ],
+        //)?;
 
         run("partprobe".into(), &[loopback_disk.path()])?;
 
