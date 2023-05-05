@@ -8,9 +8,6 @@ docker build -t crucible-tester -f Dockerfile.crucible_tester --no-cache .
 BYTES=$(docker inspect crucible-tester | jq .[0].Size)
 GBS=$(python3 -c "import math; print(1 + int(math.ceil((float(${BYTES}) / (1024.0**3)))));")
 
-# add some GBs for debug symbols
-GBS=$((GBS + 10))
-
 echo "docker image is ${BYTES} b -> bootable image is ${GBS} Gb"
 
 sudo \
