@@ -1,31 +1,32 @@
-FROM debian:11
+FROM debian:12
 
 RUN apt update -y
 RUN apt install -y \
     xxd f3 vim e2fsprogs gdisk hdparm \
     git build-essential curl parted procps fio cloud-init openssh-server \
     systemd-bootchart \
-    iputils-ping bind9-dnsutils netcat tcpdump \
-    python3-virtualenv
+    iputils-ping bind9-dnsutils netcat-openbsd tcpdump \
+    python3-virtualenv pkg-config nvme-cli sysstat \
+    network-manager
 
 # install rwsector
-RUN \
-    curl --proto '=https' --tlsv1.2 -sSf -o /root/rustup.sh https://sh.rustup.rs && \
-    sh /root/rustup.sh -y && \
-    cd /root/ && \
-    git clone https://github.com/jmpesp/rwsector.git && \
-    cd rwsector && \
-    /root/.cargo/bin/cargo build --release && \
-    cp ./target/release/rwsector / && \
-    rm -rf /root/.rustup /root/.cargo/ /root/rwsector/ && \
-    sed -i -e '/\/.cargo\/env"/d' /root/.bashrc && \
-    sed -i -e '/\/.cargo\/env"/d' /root/.profile
+#RUN \
+#    curl --proto '=https' --tlsv1.2 -sSf -o /root/rustup.sh https://sh.rustup.rs && \
+#    sh /root/rustup.sh -y && \
+#    cd /root/ && \
+#    git clone https://github.com/jmpesp/rwsector.git && \
+#    cd rwsector && \
+#    /root/.cargo/bin/cargo build --release && \
+#    cp ./target/release/rwsector / && \
+#    rm -rf /root/.rustup /root/.cargo/ /root/rwsector/ && \
+#    sed -i -e '/\/.cargo\/env"/d' /root/.bashrc && \
+#    sed -i -e '/\/.cargo\/env"/d' /root/.profile
 
 # install nvme-cli
-RUN cd /root/ && \
-    git clone --recurse-submodules -b v1.16 --single-branch https://github.com/linux-nvme/nvme-cli && \
-    cd nvme-cli && \
-    CFLAGS="-g -Wall -Werror" make
+#RUN cd /root/ && \
+#    git clone --recurse-submodules -b v2.6 --single-branch https://github.com/linux-nvme/nvme-cli && \
+#    cd nvme-cli && \
+#    CFLAGS="-g -Wall -Werror" make
 
 RUN apt purge -y build-essential && apt autoremove -y && rm -rf /var/lib/apt/lists/*
 
@@ -33,4 +34,5 @@ RUN sed -i -e '/mesg/d' /root/.profile
 
 # disable ipv6 for now
 RUN echo 'net.ipv6.conf.all.disable_ipv6 = 1' >> /etc/sysctl.conf
+RUN echo 'net.ipv6.conf.default.disable_ipv6 = 1' >> /etc/sysctl.conf
 

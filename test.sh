@@ -11,7 +11,7 @@ BASE="${1}"
 OVERLAY="${2}"
 
 rm "${OVERLAY}" || true
-qemu-img create -F raw -f qcow2 -b "${BASE}" "${OVERLAY}"
+qemu-img create -F raw -f qcow2 -b "${BASE}" "${OVERLAY}" 10G
 
 sudo qemu-system-x86_64 \
     -enable-kvm \
